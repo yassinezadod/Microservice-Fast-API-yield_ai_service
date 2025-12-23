@@ -1,0 +1,21 @@
+# --- Analyse de données et calcul ---
+pandas
+numpy
+scikit-learn
+joblib
+
+# --- Serveur API (Microservice) ---
+fastapi
+uvicorn
+pydantic
+python-dotenv
+
+# --- Algorithme de Boosting (si ton champion_model l'utilise) ---
+lightgbm
+
+# --- Tests et Validation ---
+pytest
+pytest-asyncio
+
+# --- Connexion Base de données (optionnel pour l'instant) ---
+pymongo
