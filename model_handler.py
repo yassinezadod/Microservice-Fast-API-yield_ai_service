@@ -3,11 +3,13 @@ import joblib
 import numpy as np
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
+# --- IMPORT DE TA DATABASE ---
+from database import get_history_collection
 import os
 
 # --- CONFIGURATION ET CHEMINS ---
-MODEL_PATH = "champion_model.pkl"
-DATA_PATH = "Data.csv"
+MODEL_PATH = "assets/champion_model.pkl"
+# DATA_PATH = "Data.csv"
 
 # Chargement du modèle sauvegardé
 model = joblib.load(MODEL_PATH)
@@ -84,35 +86,55 @@ def create_features(df, is_init=False):
 def init_handler():
     """Initialise le service en entraînant les scalers/encoders sur Data.csv"""
     global duree_reference, scaler, le_variete, le_phase
+    df = pd.DataFrame() # Initialisation vide
+    source = ""
     
-    if not os.path.exists(DATA_PATH):
-        print(f"❌ Erreur critique : {DATA_PATH} introuvable.")
-        return
+    try:
+        # 1. Extraction de MongoDB
+        history_col = get_history_collection()
+        cursor = history_col.find({}, {"_id": 0}).max_time_ms(2000)
+        df = pd.DataFrame(list(cursor))
+        
+        if not df.empty:
+            source = "MongoDB"
+    except Exception as e:
+        print(f" MongoDB indisponible : {e}")
+    # 2. SOLUTION DE SECOURS VIA CSV (Si Mongo a échoué ou est vide)
 
-    df = pd.read_csv(DATA_PATH, sep=',', encoding='utf-8')
-    
+    if df.empty:
+        DATA_PATH = "assets/Data.csv"
+        if os.path.exists(DATA_PATH):
+            print(f"🔄 Passage en mode secours : Chargement de {DATA_PATH}...")
+            df = pd.read_csv(DATA_PATH, sep=',', encoding='utf-8')
+            source = "CSV"
+        else:
+            print("❌ Erreur critique : Aucune donnée trouvée (Mongo vide et CSV introuvable).")
+            return
+    try:
     # Nettoyage initial
-    df['variete'] = pd.to_numeric(df['variete'], errors='coerce').fillna(0).astype(int).astype(str)
+        df['variete'] = pd.to_numeric(df['variete'], errors='coerce').fillna(0).astype(int).astype(str)
     
     # Mémorisation des durées max par variété
-    duree_reference = df.groupby('variete')['Jour apres plantation'].max().to_dict()
+        duree_reference = df.groupby('variete')['Jour apres plantation'].max().to_dict()
     
     # Feature Engineering complet
-    df_feat = create_features(df, is_init=True)
+        df_feat = create_features(df, is_init=True)
     
     # Entraînement des Encoders (FIT)
-    le_variete.fit(df_feat['variete'])
-    le_phase.fit(df_feat['phase_croissance'])
+        le_variete.fit(df_feat['variete'])
+        le_phase.fit(df_feat['phase_croissance'])
     
     # Encodage pour le fit du scaler
-    df_feat['variete_encoded'] = le_variete.transform(df_feat['variete'])
-    df_feat['phase_croissance_encoded'] = le_phase.transform(df_feat['phase_croissance'])
+        df_feat['variete_encoded'] = le_variete.transform(df_feat['variete'])
+        df_feat['phase_croissance_encoded'] = le_phase.transform(df_feat['phase_croissance'])
     
     # Entraînement du Scaler (FIT UNIQUE) sur les 33 colonnes
-    features_to_use = get_feature_list()
-    scaler.fit(df_feat[features_to_use])
+        features_to_use = get_feature_list()
+        scaler.fit(df_feat[features_to_use])
     
-    print("✅ model_handler initialisé : Références apprises depuis Data.csv.")
+        print(f"✅ model_handler initialisé : Références apprises depuis {source}.")
+    except Exception as e:
+        print(f"❌ Erreur lors du traitement des données : {e}")
 
 def predict_yield(input_dict):
     """Transforme une entrée unique et retourne la prédiction de rendement"""

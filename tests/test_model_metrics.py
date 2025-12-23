@@ -1,53 +1,38 @@
 import pytest
 import pandas as pd
-import numpy as np
-from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
-import os
-import sys
+from model_handler import predict_yield, get_feature_list
+from database import get_history_collection
+from sklearn.metrics import r2_score, mean_absolute_error
 
-# On s'assure que le dossier racine est dans le path pour importer model_handler
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from model_handler import predict_yield, DATA_PATH
-
-def test_model_performance_r2():
-    """
-    Test de validation des performances avec pytest :
-    Vérifie que le flux complet du model_handler maintient le score R2 champion.
-    """
-    # 1. Vérifier la présence du fichier de données
-    assert os.path.exists(DATA_PATH), f"Le fichier {DATA_PATH} est requis pour le test."
-
-    # 2. Charger les données pour le test (on prend un échantillon aléatoire)
-    df_raw = pd.read_csv(DATA_PATH)
-    test_samples = df_raw.sample(frac=0.2, random_state=42)
+def test_model_performance_from_mongodb():
+    """Vérifie que le modèle maintient ses performances (R2 > 0.80) avec MongoDB"""
     
-    y_true = test_samples['Rendement (t/ha)'].values
+    # 1. Extraction des données de test depuis MongoDB
+    history_col = get_history_collection()
+    cursor = history_col.find({"provenance": "csv_import"}, {"_id": 0})
+    df_test = pd.DataFrame(list(cursor))
+    
+    if df_test.empty:
+        pytest.fail("La base MongoDB est vide, impossible de tester les performances.")
+
+    print(f"\n📊 Test de performance sur {len(df_test)} lignes issues de MongoDB...")
+
+    # 2. Préparation des listes pour comparer
+    y_true = df_test['Rendement (t/ha)'].tolist()
     y_pred = []
 
-    # 3. Exécuter les prédictions via le model_handler
-    # Cela teste l'initialisation du scaler et des encoders
-    for _, row in test_samples.iterrows():
-        # On prépare le dictionnaire comme le fera l'API
-        input_data = row.drop('Rendement (t/ha)').to_dict()
-        
-        try:
-            prediction = predict_yield(input_data)
-            y_pred.append(prediction)
-        except Exception as e:
-            pytest.fail(f"Erreur lors de la prédiction pour la ligne {row.name}: {e}")
+    # 3. Calcul des prédictions ligne par ligne
+    for _, row in df_test.iterrows():
+        # On passe la ligne entière à la fonction de prédiction
+        pred = predict_yield(row.to_dict())
+        y_pred.append(pred)
 
-    # 4. Calcul des métriques
+    # 4. Calcul des scores
     r2 = r2_score(y_true, y_pred)
     mae = mean_absolute_error(y_true, y_pred)
-    
-    # Affichage des résultats dans la console (visible avec -s)
-    print(f"\n" + "="*40)
-    print(f"📊 RÉSULTATS DU TEST PYTEST")
-    print(f"✅ R2 Score : {r2:.4f}")
-    print(f"✅ MAE      : {mae:.4f} t/ha")
-    print("="*40)
 
-    # 5. Assertions
-    # On autorise une petite marge par rapport au 0.7337 (ex: 0.70)
-    assert r2 > 0.65, f"La précision R2 est tombée à {r2:.4f} !"
-    assert mae < 1.0, f"L'erreur MAE est trop élevée : {mae:.4f}"
+    print(f"✅ Résultat du Test - R2 Score: {r2:.4f}")
+    print(f"✅ Résultat du Test - MAE: {mae:.4f}")
+
+    # 5. Validation (Le test échoue si le score chute trop)
+    assert r2 > 0.80, f"Le score R2 est trop bas: {r2:.4f}"
