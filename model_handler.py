@@ -141,21 +141,28 @@ def predict_yield(input_dict):
     # 1. Chargement dans un DataFrame d'une ligne
     df_raw = pd.DataFrame([input_dict])
     
-    # 2. Feature Engineering (utilise duree_reference)
+    # 2. Feature Engineering (crée les 33 variables)
     df_feat = create_features(df_raw, is_init=False)
     
-    # 3. Encodage avec les objets déjà entraînés (TRANSFORM uniquement)
+    # 3. Encodage avec les objets déjà entraînés
     df_feat['variete_encoded'] = le_variete.transform(df_feat['variete'])
     df_feat['phase_croissance_encoded'] = le_phase.transform(df_feat['phase_croissance'])
 
-    # 4. Sélection des 33 features
-    X = df_feat[get_feature_list()]
+    # 4. Sélection des 33 features dans l'ordre strict du modèle
+    features_ordered = get_feature_list()
+    X = df_feat[features_ordered]
     
-    # 5. Normalisation SANS ré-entraînement (TRANSFORM uniquement)
-    X_scaled = scaler.transform(X)
+    # 5. NORMALISATION + RÉ-INJECTION DES NOMS (Correction de la précision)
+    # On transforme l'array NumPy en DataFrame avec les vrais noms de colonnes
+    X_scaled = pd.DataFrame(
+        scaler.transform(X), 
+        columns=features_ordered
+    )
 
-    # 6. Prédiction finale
+    # 6. Prédiction finale avec les noms de features
+    # Cela élimine le UserWarning et garantit que chaque chiffre va au bon endroit
     prediction = model.predict(X_scaled)
+    
     return round(float(prediction[0]), 3)
 
 # Lancement automatique de l'initialisation au chargement du script
