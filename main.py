@@ -1,35 +1,65 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from pydantic import BaseModel, Field
 from model_handler import predict_yield
+from typing import List, Dict
 from database import get_history_collection  # <-- Import de la base de données
 import uvicorn
-
+import numpy as np
+from sync_service import sync_data_to_mongodb
 app = FastAPI(title="Smart Agri Yield API")
 
 # 1. Définition de la structure pour Swagger (évite le additionalProp1)
-class AgriDataInput(BaseModel):
-    id: str = "694a72fa3960534ce39a5b03"
-    Semaine: int = 41
-    Jour_apres_plantation: int = 59
-    Vitesse_de_maturation: int = 1
-    variete: str = "2009"
-    Rendement_t_ha: float = 5.0
-    ETo_mm: float = 2.84
-    Temp_Min_C: float = 11.46
-    Temp_Moy_C: float = 16.34
-    Temp_Max_C: float = 21.36
-    Hum_Min_pct: float = 65.58
-    Hum_Moy_pct: float = 88.91
-    Hum_Max_pct: float = 100.0
-    Rayonnement_global: float = 1948.48
-    VPD_Min: float = 0.0
-    VPD_Kpa: float = 0.2
-    VPD_Max: float = 1.03
-    Degre_jour: float = 6.41
-    Cumul_degres_jour: float = 187.71
-    Amplitude_thermique: float = 9.9
-    Indice_chaleur: float = 18.43
-    Point_de_rosee: float = 9.93
+class ClimateData(BaseModel):
+    """Structure commune pour les données climatiques"""
+    ETo_mm: float
+    Temp_Min_C: float
+    Temp_Moy_C: float
+    Temp_Max_C: float
+    Hum_Min_pct: float
+    Hum_Moy_pct: float
+    Hum_Max_pct: float
+    Rayonnement_global: float
+    VPD_Min: float
+    VPD_Kpa: float
+    VPD_Max: float
+    Degre_jour: float
+    Cumul_degres_jour: float
+    Amplitude_thermique: float
+    Indice_chaleur: float
+    Point_de_rosee: float
+
+class CurrentWeekData(ClimateData):
+    """Données de la semaine actuelle + Infos culture"""
+    Semaine: int
+    Jour_apres_plantation: int
+    Vitesse_de_maturation: int
+    variete: str
+    Rendement_t_ha: float
+
+class PredictionInput(BaseModel):
+    """Blocs S1, S2, S3, S4"""
+    S1: ClimateData
+    S2: ClimateData
+    S3: ClimateData
+    S4: ClimateData
+
+class GlobalRequest(BaseModel):
+    """Requête racine telle que demandée"""
+    current_week_data: CurrentWeekData
+    predictions_input: PredictionInput
+
+# --- NOUVEAUX MODÈLES POUR LA COMPARAISON ---
+
+class WeeklyUpdate(BaseModel):
+    """Entrée individuelle pour une semaine spécifique"""
+    semaine: int
+    rendement_predit: float
+    valeur_reelle: float
+
+class CompareFourWeeksRequest(BaseModel):
+    """Requête pour mettre à jour les 4 semaines de résultats"""
+    variete: str
+    mises_a_jour: List[WeeklyUpdate]
 
 # ... Tes routes @app.get (Health, Metrics, History) restent inchangées ...
 
@@ -44,6 +74,20 @@ def health_check():
         "service": "Smart Agri Yield API",
         "version": "1.0.0",
         "message": "Le moteur de prédiction est prêt à recevoir des requêtes."
+    }
+
+@app.post("/api/sync-history")
+async def trigger_sync(background_tasks: BackgroundTasks):
+    """
+    Cette route est appelée par Laravel. 
+    Python enregistre les données AUTOMATIQUEMENT en arrière-plan.
+    """
+    # On lance la synchronisation en tâche de fond
+    background_tasks.add_task(sync_data_to_mongodb)
+    
+    return {
+        "status": "processing", 
+        "message": "La synchronisation automatique vers MongoDB a démarré."
     }
 
 @app.get("/metrics", tags=["Performance"])
@@ -68,6 +112,15 @@ def get_model_metrics():
         "features_count": 33
     }
 
+class CompareRequest(BaseModel):
+    """Schéma pour la mise à jour des valeurs réelles"""
+    prediction_id: str
+    semaine: int
+    rendement_predit: float
+    valeur_reelle: float
+
+
+
 # --- NOUVELLE ROUTE : HISTORY ---
 @app.get("/api/predict/history")
 def get_all_history():
@@ -88,63 +141,118 @@ def get_all_history():
 # --- TES AUTRES ROUTES ---
 # ... Tes routes @app.get (Health, Metrics, History) restent inchangées ...
 
-@app.post("/predict", tags=["Prédiction"])
-async def predict(data: AgriDataInput):
-    try:
-        # 2. MAPPING : On transforme les noms simples en noms attendus par le modèle
-        # C'est ici que l'erreur 500 se règle
-        # Mapping avec correction de l'espace double pour Cumul degres jour
-        formatted_data = {
-            "Semaine": data.Semaine,
-            "Jour apres plantation": data.Jour_apres_plantation,
-            "Vitesse de maturation": data.Vitesse_de_maturation,
-            "variete": data.variete,
-            "Rendement (t/ha)": data.Rendement_t_ha,
-            "ETo (mm)": data.ETo_mm,
-            "Temperature (Min) (C)": data.Temp_Min_C,
-            "Temperature (Moy) (C)": data.Temp_Moy_C,
-            "Temperature (Max) (C)": data.Temp_Max_C,
-            "Humidite relative (Min) (%)": data.Hum_Min_pct,
-            "Humidite relative (Moy) (%)": data.Hum_Moy_pct,
-            "Humidite relative (Max) (%)": data.Hum_Max_pct,
-            "Rayonnement global (j/cm2)": data.Rayonnement_global,
-            "VPD (Min) (Kpa)": data.VPD_Min,
-            "VPD (Kpa)": data.VPD_Kpa,
-            "VPD (Max) (Kpa)": data.VPD_Max,
-            "Degre jour (C)": data.Degre_jour,
-            
-            # ATTENTION : J'ai mis deux espaces ici entre jour et (C) 
-            # pour correspondre à l'erreur renvoyée par ton modèle
-            "Cumul degres jour  (C)": data.Cumul_degres_jour, 
-            
-            "Amplitude thermique (C)": data.Amplitude_thermique,
-            "Indice de chaleur (C)": data.Indice_chaleur,
-            "Point de rosee (C)": data.Point_de_rosee
-        }
 
-        # 3. Boucle pour les 4 semaines (42, 43, 44, 45)
-        forecast = {}
-        for i in range(1, 5):
-            week_to_predict = data.Semaine + i
-            day_to_predict = data.Jour_apres_plantation + (i * 7)
-            
-            # On prépare la copie pour la semaine i
-            current_input = formatted_data.copy()
-            current_input["Semaine"] = week_to_predict
-            current_input["Jour apres plantation"] = day_to_predict
-            
-            # Appel effectif du modèle
-            res = predict_yield(current_input)
-            forecast[f"Semaine_{week_to_predict}"] = res
+@app.post("/api/compare", tags=["Analyse"])
+async def compare_yield_results(data: CompareFourWeeksRequest):
+    """
+    Calcule les métriques de performance : MAE, RMSE, R2 et Fiabilité.
+    """
+    try:
+        # On extrait les données pour les calculs mathématiques
+        y_reel = np.array([item.valeur_reelle for item in data.mises_a_jour])
+        y_pred = np.array([item.rendement_predit for item in data.mises_a_jour])
+        
+        # 1. MAE (Erreur Absolue Moyenne)
+        mae = np.mean(np.abs(y_reel - y_pred))
+        
+        # 2. RMSE (Racine de l'Erreur Quadratique Moyenne)
+        rmse = np.sqrt(np.mean((y_reel - y_pred)**2))
+        
+        
+        # 4. Fiabilité (%) basée sur la précision relative
+        # On utilise 1 - MAPE (Mean Absolute Percentage Error)
+        mape = np.mean(np.abs((y_reel - y_pred) / y_reel))
+        fiabilite = max(0, (1 - mape) * 100)
 
         return {
-            "input_id": data.id,
-            "predictions": forecast
+            "status": "success",
+            "variete": data.variete,
+            "performance_globale": {
+                "fiabilite": f"{round(fiabilite, 2)}%",
+                "mae": round(float(mae), 4),
+                "rmse": round(float(rmse), 4)
+            },
+            "comparaison_hebdomadaire": [
+                {
+                    "semaine": item.semaine,
+                    "predit": item.rendement_predit,
+                    "reel": item.valeur_reelle,
+                    "erreur": round(abs(item.valeur_reelle - item.rendement_predit), 4)
+                } for item in data.mises_a_jour
+            ]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur de calcul : {str(e)}")
+
+@app.post("/predict", tags=["Prédiction"])
+async def predict_yield_multi_weeks(data: GlobalRequest):
+    try:
+        results = []
+        # On initialise avec le rendement de la semaine actuelle
+        last_yield = data.current_week_data.Rendement_t_ha
+        
+        # Mapping des blocs pour itération
+        future_weeks = [
+            data.predictions_input.S1, 
+            data.predictions_input.S2, 
+            data.predictions_input.S3, 
+            data.predictions_input.S4
+        ]
+
+        for i, week_data in enumerate(future_weeks):
+            target_week = data.current_week_data.Semaine + (i + 1)
+            if target_week > 52:
+                target_week -= 52
+            target_day = data.current_week_data.Jour_apres_plantation + ((i + 1) * 7)
+
+            # Préparation du payload pour le model_handler (33 features)
+            # On mappe les noms pour correspondre aux attentes du modèle
+            payload = {
+                "Semaine": target_week,
+                "Jour apres plantation": target_day,
+                "Vitesse de maturation": data.current_week_data.Vitesse_de_maturation,
+                "variete": data.current_week_data.variete,
+                "Rendement (t/ha)": last_yield,
+                "ETo (mm)": week_data.ETo_mm,
+                "Temperature (Min) (C)": week_data.Temp_Min_C,
+                "Temperature (Moy) (C)": week_data.Temp_Moy_C,
+                "Temperature (Max) (C)": week_data.Temp_Max_C,
+                "Humidite relative (Min) (%)": week_data.Hum_Min_pct,
+                "Humidite relative (Moy) (%)": week_data.Hum_Moy_pct,
+                "Humidite relative (Max) (%)": week_data.Hum_Max_pct,
+                "Rayonnement global (j/cm2)": week_data.Rayonnement_global,
+                "VPD (Min) (Kpa)": week_data.VPD_Min,
+                "VPD (Kpa)": week_data.VPD_Kpa,
+                "VPD (Max) (Kpa)": week_data.VPD_Max,
+                "Degre jour (C)": week_data.Degre_jour,
+                "Cumul degres jour  (C)": week_data.Cumul_degres_jour, # Double espace
+                "Amplitude thermique (C)": week_data.Amplitude_thermique,
+                "Indice de chaleur (C)": week_data.Indice_chaleur,
+                "Point de rosee (C)": week_data.Point_de_rosee
+            }
+
+            # Calcul de la prédiction
+            prediction = predict_yield(payload)
+            
+            results.append({
+                "semaine": target_week,
+                "rendement_predit": prediction
+            })
+
+            # Le résultat devient l'entrée pour la semaine suivante
+            last_yield = prediction
+
+        return {
+            "status": "success",
+            "variete": data.current_week_data.variete,
+            "forecast": results
         }
 
     except Exception as e:
-        # Affiche l'erreur exacte dans ton terminal VS Code
-        print(f"ERREUR TECHNIQUE : {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Erreur IA : {str(e)}")
+
+def run_server():
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    run_server()

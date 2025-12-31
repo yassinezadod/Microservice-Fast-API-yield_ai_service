@@ -9,7 +9,7 @@ def test_prediction_from_mongodb():
     
     # 1. On récupère les données (Semaine est un nombre, variete est un nombre)
     query = {
-        "Semaine": {"$in": [2, 3, 4, 5]},
+        "Semaine": {"$in": [49, 50, 51, 52]},
         "variete": 2010
     }
     
@@ -22,7 +22,7 @@ def test_prediction_from_mongodb():
     print(f"✅ {len(records)} semaines trouvées. Calcul de la précision...\n")
     
     # Rendement de départ (Semaine 1)
-    last_yield = 3.5 
+    last_yield = 6.9
     somme_erreurs = 0
     compteur = 0
 
