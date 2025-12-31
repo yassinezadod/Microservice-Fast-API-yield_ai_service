@@ -30,6 +30,7 @@ Créez un fichier `.env` à la racine (déjà présent dans votre dossier local)
 ```env
 MONGO_URI=mongodb://localhost:27017
 DB_NAME=Your database name
+MONGO_COLLECTION_HISTORY=history
 LARAVEL_SYNC_URL=http://localhost:8001/api/yield/sync-data
 LARAVEL_SYNC_KEY=votre_cle_secrete_hexadecimale
 ```

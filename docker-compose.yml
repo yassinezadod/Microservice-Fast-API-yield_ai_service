@@ -1,0 +1,39 @@
+version: "3.8"
+
+services:
+  # --- BASE DE DONNÉES MONGODB ---
+  mongodb:
+    image: mongo:latest
+    container_name: yield_ai_db
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+      - ./mongo-init/import.sh:/docker-entrypoint-initdb.d/import.sh:ro
+      - ./assets/Data.csv:/docker-entrypoint-initdb.d/Data.csv:ro
+    networks:
+      - yield_bridge
+
+  # --- MICROSERVICE FASTAPI (PYTHON) ---
+  yield_ai_api:
+    build: .
+    container_name: yield_ai_service
+    restart: always
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      - mongodb
+    networks:
+      - yield_bridge
+
+# --- CONFIGURATION DU RÉSEAU BRIDGE ---
+networks:
+  yield_bridge:
+    driver: bridge
+
+# --- PERSISTANCE DES DONNÉES MONGODB ---
+volumes:
+  mongo_data:
