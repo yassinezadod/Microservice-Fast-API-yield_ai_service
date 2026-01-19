@@ -1,0 +1,44 @@
+version: "3.8"
+
+services:
+  # --- BASE DE DONNÉES MONGODB ---
+  mongodb:
+    image: mongo:latest
+    container_name: yield_ai_db
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+      - ./mongo-init/import.sh:/docker-entrypoint-initdb.d/import.sh:ro
+      - ./assets/Data.csv:/docker-entrypoint-initdb.d/Data.csv:ro
+    networks:
+      - yield_bridge
+
+  # --- MICROSERVICE FASTAPI (PYTHON) ---
+  yield_ai_api:
+    build: .
+    container_name: yield_ai_service
+    restart: always
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      # On écrase ici les variables locales pour forcer la configuration Docker
+      - MONGO_URI=mongodb://mongodb:27017
+      - MONGO_DB_NAME=smart_agri_db
+      - LARAVEL_SYNC_URL=http://host.docker.internal:8001/api/yield/sync-data
+    depends_on:
+      - mongodb
+    networks:
+      - yield_bridge
+
+# --- CONFIGURATION DU RÉSEAU ---
+networks:
+  yield_bridge:
+    driver: bridge
+
+# --- PERSISTANCE DES DONNÉES ---
+volumes:
+  mongo_data:

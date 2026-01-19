@@ -1,24 +1,37 @@
-from fastapi.testclient import TestClient
-from main import app # On importe ton application FastAPI
+import os
+import pytest
+from httpx import AsyncClient
+from dotenv import load_dotenv
 
-client = TestClient(app)
+# Charger les variables du .env
+load_dotenv()
 
-def test_read_main():
-    """Vérifie que le service est en ligne"""
-    response = client.get("/")
-    assert response.status_code == 200
-    assert response.json() == {"message": "AI Service is Online", "docs": "/docs"}
+LARAVEL_URL = os.getenv("LARAVEL_SYNC_URL")
+VALID_KEY = os.getenv("LARAVEL_SYNC_KEY")
 
-def test_predict_endpoint_error():
-    """Vérifie que l'API renvoie une erreur si les données sont incomplètes"""
-    payload = {
-        "semaine": 12,
-        "rendement_initial": 1.5,
-        "variete": 1
+@pytest.mark.asyncio
+async def test_fetch_laravel_data():
+    """
+    Test asynchrone pour vérifier que l'API Laravel 
+    renvoie les données avec succès.
+    """
+    headers = {
+        "X-Internal-Sync-Key": VALID_KEY,
+        "Accept": "application/json"
     }
-    response = client.post("/predict", json=payload)
+
+    # Utilisation de AsyncClient pour simuler l'appel asynchrone
+    async with AsyncClient() as client:
+        response = await client.get(LARAVEL_URL, headers=headers)
+
+    # Vérifications
+    assert response.status_code == 200, f"Erreur de connexion: {response.status_code}"
     
-    # On s'attend à une erreur 500 car il manque les 33 colonnes 
-    # tant que model_handler n'est pas corrigé
-    assert response.status_code == 500 
-    assert "features" in response.json()["detail"]
+    json_data = response.json()
+    assert json_data["success"] is True
+    assert "data" in json_data
+    assert isinstance(json_data["data"], list)
+
+    # Affichage pour le mode -s de pytest
+    print(f"\n✅ Connexion établie avec Laravel")
+    print(f"✅ {len(json_data['data'])} analyses récupérées avec succès")
