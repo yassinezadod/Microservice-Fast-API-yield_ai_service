@@ -11,7 +11,7 @@ echo "----------------------------------------------------------------"
 # --type csv : Format source
 # --file : Chemin du fichier MONTÉ dans le conteneur via docker-compose
 # --headerline : Utilise la 1ère ligne du CSV pour les noms des colonnes
-mongoimport --db yield_ai_db \
+mongoimport --db smart_agri_db \
             --collection history \
             --type csv \
             --file /docker-entrypoint-initdb.d/Data.csv \

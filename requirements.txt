@@ -1,21 +1,27 @@
-# --- Analyse de données et calcul ---
-pandas
-numpy
-scikit-learn
-joblib
-
 # --- Serveur API (Microservice) ---
 fastapi
 uvicorn
 pydantic
 python-dotenv
 
-# --- Algorithme de Boosting (si ton champion_model l'utilise) ---
+# --- Synchronisation & Communication ---
+httpx
+requests
+
+# --- Analyse de données et calcul ---
+pandas
+numpy
+scikit-learn
+joblib
+
+# --- Algorithme de Boosting ---
 lightgbm
+
+# --- Connexion Base de données ---
+pymongo
+motor
 
 # --- Tests et Validation ---
 pytest
 pytest-asyncio
-
-# --- Connexion Base de données (optionnel pour l'instant) ---
-pymongo
+anyio

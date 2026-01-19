@@ -24,16 +24,21 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    environment:
+      # On écrase ici les variables locales pour forcer la configuration Docker
+      - MONGO_URI=mongodb://mongodb:27017
+      - MONGO_DB_NAME=smart_agri_db
+      - LARAVEL_SYNC_URL=http://host.docker.internal:8001/api/yield/sync-data
     depends_on:
       - mongodb
     networks:
       - yield_bridge
 
-# --- CONFIGURATION DU RÉSEAU BRIDGE ---
+# --- CONFIGURATION DU RÉSEAU ---
 networks:
   yield_bridge:
     driver: bridge
 
-# --- PERSISTANCE DES DONNÉES MONGODB ---
+# --- PERSISTANCE DES DONNÉES ---
 volumes:
   mongo_data:

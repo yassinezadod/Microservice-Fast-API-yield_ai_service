@@ -85,3 +85,43 @@ Ce microservice utilise les BackgroundTasks de FastAPI. Lorsqu'une comparaison e
 - Formater les données (33 features agro-climatiques).
 - Vérifier les doublons.
 - Enregistrer la "vérité terrain" dans MongoDB.
+
+## 🐳 Déploiement avec Docker (Automatique)
+
+Pour une mise en route rapide incluant l'infrastructure complète (Laravel, Python, MySQL, MongoDB), nous utilisons Docker Compose.
+
+### 1. Préparation des scripts
+
+Avant le premier lancement, assurez-vous que le script d'initialisation de la base de données MongoDB possède les droits d'exécution :
+
+```bash
+chmod +x mongo-init/import.sh
+```
+
+### 2. Préparation des scripts
+
+Cette commande construit les images et démarre tous les microservices en arrière-plan :
+
+```bash
+docker-compose up --build -d
+
+```
+
+### 3. Vérification des logs
+
+Pour surveiller les prédictions de l'IA en temps réel dans le conteneur :
+
+```bash
+docker logs -f python-ia-service
+```
+
+### 4. Vérification des logs
+
+3. Accès aux services via Docker
+   Une fois les conteneurs démarrés, les services sont accessibles aux adresses suivantes :
+
+- Laravel (Backend) : http://localhost:8000
+
+- (IA Engine) : http://localhost:8001
+
+- Swagger IA (Documentation) : http://localhost:8001/docs
